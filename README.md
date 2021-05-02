@@ -7,9 +7,12 @@ Official repository for the paper [Real-Time High-Resolution Background Matting]
 * [Visit project site](https://grail.cs.washington.edu/projects/background-matting-v2/)
 * [Watch project video](https://www.youtube.com/watch?v=oMfPTeYDF9g)
 
+**Disclaimer**: The video conversion script in this repo is not meant be real-time. Our research's main contribution is the neural architecture for high resolution refinement and the new matting datasets. The `inference_speed_test.py` script allows you to measure the tensor throughput of our model, which should achieve real-time. The `inference_video.py` script allows you to test your video on our model, but the video encoding and decoding is done without hardware acceleration and parallization. For production use, you are expected to do additional engineering for hardware encoding/decoding and loading frames to GPU in parallel. For more architecture detail, please refer to our paper.
+
 &nbsp;
 
 ## Overview
+* [Updates](#updates)
 * [Download](#download)
     * [Model / Weights](#model--weights)
     * [Video / Image Examples](#video--image-examples)
@@ -22,6 +25,16 @@ Official repository for the paper [Real-Time High-Resolution Background Matting]
 * [Project members](#project-members)
 * [License](#license)
 * [Community Projects](#community-projects)
+
+&nbsp;
+
+## Updates
+
+* [Apr 21 2021] VideoMatte240K dataset is now published.
+* [Mar 06 2021] Training script is published.
+* [Feb 28 2021] Paper is accepted to CVPR 2021.
+* [Jan 09 2021] PhotoMatte85 dataset is now published.
+* [Dec 21 2020] We updated our project to MIT License, which permits commercial use.
 
 &nbsp;
 
@@ -39,8 +52,7 @@ Official repository for the paper [Real-Time High-Resolution Background Matting]
 
 ### Datasets
 
-* VideoMatte240K (Coming soon)
-* PhotoMatte85 (Coming soon)
+* [Download datasets](https://grail.cs.washington.edu/projects/background-matting-v2/#/datasets)
 
 &nbsp;
 
@@ -76,7 +88,7 @@ You can run our model using **PyTorch**, **TorchScript**, **TensorFlow**, and **
 
 ## Training
 
-Training code will be released upon acceptance of the paper.
+Configure `data_path.pth` to point to your dataset. The original paper uses `train_base.pth` to train only the base model till convergence then use `train_refine.pth` to train the entire network end-to-end. More details are specified in the paper.
 
 &nbsp;
 
@@ -93,12 +105,12 @@ Training code will be released upon acceptance of the paper.
 &nbsp;
 
 ## License ##
-This work is licensed under the [Creative Commons Attribution NonCommercial ShareAlike 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
+This work is licensed under the [MIT License](LICENSE). If you use our work in your project, we would love you to include an acknowledgement and fill out our [survey](https://docs.google.com/forms/d/e/1FAIpQLSdR9Yhu9V1QE3pN_LvZJJyDaEpJD2cscOOqMz8N732eLDf42A/viewform?usp=sf_link).
 
 &nbsp;
 
 ## Community Projects
 
-A list of projects built by third-party developers in the community. If you have a project to share, contact us!
+A list of projects built by third-party developers in the community. If you have a project to share, fill out this [survey]([survey](https://docs.google.com/forms/d/e/1FAIpQLSdR9Yhu9V1QE3pN_LvZJJyDaEpJD2cscOOqMz8N732eLDf42A/viewform?usp=sf_link)).
 
 * [Web Demo by Gradio](https://gradio.app/g/BackgroundMattingV2): Matting your own images from your browser.

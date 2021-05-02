@@ -14,7 +14,8 @@ Example:
         --video-bgr "PATH_TO_VIDEO_BGR" \
         --video-resize 1920 1080 \
         --output-dir "PATH_TO_OUTPUT_DIR" \
-        --output-type com fgr pha err ref
+        --output-type com fgr pha err ref \
+        --video-target-bgr "PATH_TO_VIDEO_TARGET_BGR"
 
 """
 
@@ -55,8 +56,10 @@ parser.add_argument('--model-refine-kernel-size', type=int, default=3)
 
 parser.add_argument('--video-src', type=str, required=True)
 parser.add_argument('--video-bgr', type=str, required=True)
+parser.add_argument('--video-target-bgr', type=str, default=None, help="Path to video onto which to composite the output (default to flat green)")
 parser.add_argument('--video-resize', type=int, default=None, nargs=2)
 
+parser.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cuda')
 parser.add_argument('--preprocess-alignment', action='store_true')
 
 parser.add_argument('--output-dir', type=str, required=True)
@@ -109,6 +112,8 @@ class ImageSequenceWriter:
 # --------------- Main ---------------
 
 
+device = torch.device(args.device)
+
 # Load model
 if args.model_type == 'mattingbase':
     model = MattingBase(args.model_backbone)
@@ -121,8 +126,8 @@ if args.model_type == 'mattingrefine':
         args.model_refine_threshold,
         args.model_refine_kernel_size)
 
-model = model.cuda().eval()
-model.load_state_dict(torch.load(args.model_checkpoint), strict=False)
+model = model.to(device).eval()
+model.load_state_dict(torch.load(args.model_checkpoint, map_location=device), strict=False)
 
 
 # Load video and background
@@ -133,6 +138,8 @@ dataset = ZipDataset([vid, bgr], transforms=A.PairCompose([
     HomographicAlignment() if args.preprocess_alignment else A.PairApply(nn.Identity()),
     A.PairApply(T.ToTensor())
 ]))
+if args.video_target_bgr:
+    dataset = ZipDataset([dataset, VideoDataset(args.video_target_bgr, transforms=T.ToTensor())])
 
 # Create output directory
 if os.path.exists(args.output_dir):
@@ -172,9 +179,15 @@ else:
 
 # Conversion loop
 with torch.no_grad():
-    for src, bgr in tqdm(DataLoader(dataset, batch_size=1, pin_memory=True)):
-        src = src.cuda(non_blocking=True)
-        bgr = bgr.cuda(non_blocking=True)
+    for input_batch in tqdm(DataLoader(dataset, batch_size=1, pin_memory=True)):
+        if args.video_target_bgr:
+            (src, bgr), tgt_bgr = input_batch
+            tgt_bgr = tgt_bgr.to(device, non_blocking=True)
+        else:
+            src, bgr = input_batch
+            tgt_bgr = torch.tensor([120/255, 255/255, 155/255], device=device).view(1, 3, 1, 1)
+        src = src.to(device, non_blocking=True)
+        bgr = bgr.to(device, non_blocking=True)
         
         if args.model_type == 'mattingbase':
             pha, fgr, err, _ = model(src, bgr)
@@ -186,8 +199,7 @@ with torch.no_grad():
         if 'com' in args.output_types:
             if args.output_format == 'video':
                 # Output composite with green background
-                bgr_green = torch.tensor([120/255, 255/255, 155/255], device='cuda').view(1, 3, 1, 1)
-                com = fgr * pha + bgr_green * (1 - pha)
+                com = fgr * pha + tgt_bgr * (1 - pha)
                 com_writer.add_batch(com)
             else:
                 # Output composite as rgba png images

@@ -22,6 +22,7 @@ import torch
 import os
 import shutil
 
+from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
@@ -52,6 +53,9 @@ parser.add_argument('--model-refine-kernel-size', type=int, default=3)
 parser.add_argument('--images-src', type=str, required=True)
 parser.add_argument('--images-bgr', type=str, required=True)
 
+parser.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cuda')
+parser.add_argument('--num-workers', type=int, default=0, 
+    help='number of worker threads used in DataLoader. Note that Windows need to use single thread (0).')
 parser.add_argument('--preprocess-alignment', action='store_true')
 
 parser.add_argument('--output-dir', type=str, required=True)
@@ -70,6 +74,8 @@ assert 'ref' not in args.output_types or args.model_type in ['mattingrefine'], \
 # --------------- Main ---------------
 
 
+device = torch.device(args.device)
+
 # Load model
 if args.model_type == 'mattingbase':
     model = MattingBase(args.model_backbone)
@@ -82,8 +88,8 @@ if args.model_type == 'mattingrefine':
         args.model_refine_threshold,
         args.model_refine_kernel_size)
 
-model = model.cuda().eval()
-model.load_state_dict(torch.load(args.model_checkpoint), strict=False)
+model = model.to(device).eval()
+model.load_state_dict(torch.load(args.model_checkpoint, map_location=device), strict=False)
 
 
 # Load images
@@ -92,9 +98,9 @@ dataset = ZipDataset([
     ImagesDataset(args.images_bgr),
 ], assert_equal_length=True, transforms=A.PairCompose([
     HomographicAlignment() if args.preprocess_alignment else A.PairApply(nn.Identity()),
-    A.PairApply(T.ToTensor)
+    A.PairApply(T.ToTensor())
 ]))
-dataloader = DataLoader(dataset, batch_size=1, num_workers=8, pin_memory=True)
+dataloader = DataLoader(dataset, batch_size=1, num_workers=args.num_workers, pin_memory=True)
 
 
 # Create output directory
@@ -117,27 +123,28 @@ def writer(img, path):
 # Conversion loop
 with torch.no_grad():
     for i, (src, bgr) in enumerate(tqdm(dataloader)):
-        filename = dataset.datasets[0].filenames[i]
-        src = src.cuda(non_blocking=True)
-        bgr = bgr.cuda(non_blocking=True)
+        src = src.to(device, non_blocking=True)
+        bgr = bgr.to(device, non_blocking=True)
         
         if args.model_type == 'mattingbase':
             pha, fgr, err, _ = model(src, bgr)
         elif args.model_type == 'mattingrefine':
             pha, fgr, _, _, err, ref = model(src, bgr)
-        elif args.model_type == 'mattingbm':
-            pha, fgr = model(src, bgr)
+
+        pathname = dataset.datasets[0].filenames[i]
+        pathname = os.path.relpath(pathname, args.images_src)
+        pathname = os.path.splitext(pathname)[0]
             
         if 'com' in args.output_types:
             com = torch.cat([fgr * pha.ne(0), pha], dim=1)
-            Thread(target=writer, args=(com, filename.replace(args.images_src, os.path.join(args.output_dir, 'com')).replace('.jpg', '.png'))).start()
+            Thread(target=writer, args=(com, os.path.join(args.output_dir, 'com', pathname + '.png'))).start()
         if 'pha' in args.output_types:
-            Thread(target=writer, args=(pha, filename.replace(args.images_src, os.path.join(args.output_dir, 'pha')).replace('.png', '.jpg'))).start()
+            Thread(target=writer, args=(pha, os.path.join(args.output_dir, 'pha', pathname + '.jpg'))).start()
         if 'fgr' in args.output_types:
-            Thread(target=writer, args=(fgr, filename.replace(args.images_src, os.path.join(args.output_dir, 'fgr')).replace('.png', '.jpg'))).start()
+            Thread(target=writer, args=(fgr, os.path.join(args.output_dir, 'fgr', pathname + '.jpg'))).start()
         if 'err' in args.output_types:
             err = F.interpolate(err, src.shape[2:], mode='bilinear', align_corners=False)
-            Thread(target=writer, args=(err, filename.replace(args.images_src, os.path.join(args.output_dir, 'err')).replace('.png', '.jpg'))).start()
+            Thread(target=writer, args=(err, os.path.join(args.output_dir, 'err', pathname + '.jpg'))).start()
         if 'ref' in args.output_types:
             ref = F.interpolate(ref, src.shape[2:], mode='nearest')
-            Thread(target=writer, args=(ref, filename.replace(args.images_src, os.path.join(args.output_dir, 'ref')).replace('.png', '.jpg'))).start()
+            Thread(target=writer, args=(ref, os.path.join(args.output_dir, 'ref', pathname + '.jpg'))).start()
